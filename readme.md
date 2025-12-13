@@ -260,29 +260,27 @@ railway up
 - **`.env.example`**: Template environment variables
 - **`.gitignore`**: Git ignore rules
 
-### 🚀 Quick Start Railway:
+### 💰 Upgrade Plan Railway:
 
-1. **Push ke GitHub**:
-   ```bash
-   git add .
-   git commit -m "Ready for Railway deployment"
-   git push origin main
-   ```
+Jika image masih >4GB, upgrade ke **Hobby Plan** ($5/bulan):
+- Image size limit: **8GB**
+- RAM: 8GB
+- Disk: 5GB
 
-2. **Deploy di Railway**:
-   - Connect GitHub repo
-   - Railway auto-detect dan build
-   - Set `WANDB_API_KEY` di environment variables
+**Cara Upgrade:**
+1. Pergi ke Railway dashboard
+2. Project Settings → Billing
+3. Upgrade ke Hobby Plan
 
-3. **Access App**:
-   - URL akan diberikan Railway (e.g., `https://your-app.railway.app`)
+### 🔄 Redeploy Setelah Optimasi:
 
-### 🔧 Troubleshooting:
+```bash
+git add .
+git commit -m "Optimize Docker for smaller image size"
+git push origin main
+```
 
-- **Build Fail**: Check logs di Railway dashboard
-- **Port Issues**: Pastikan `$PORT` environment variable digunakan
-- **W&B Issues**: Pastikan `WANDB_API_KEY` valid
-- **Model Loading**: Pastikan `models/best.pt` ada di repo atau download otomatis
+Railway akan auto-rebuild dengan Dockerfile yang baru.
 
 ---
 
