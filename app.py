@@ -17,6 +17,7 @@ templates = Jinja2Templates(directory="templates")
 current_model = "pothole_yolov8n.pt"
 confidence_threshold = 0.5
 model = None
+last_frame = None  # Store the latest frame for feedback
 
 def load_model():
     global model
@@ -53,6 +54,10 @@ def generate_frames():
             success, frame = cap.read()
             if not success:
                 break
+            
+            # Store the latest frame globally for feedback
+            global last_frame
+            last_frame = frame.copy()
             
             # Perform inference if model is loaded
             if model:
@@ -148,15 +153,16 @@ async def submit_feedback(has_pothole: bool = Form(...)):
     saved_image = False
     if has_pothole:
         try:
-            cap = cv2.VideoCapture(0)
-            ret, frame = cap.read()
-            if ret:
+            global last_frame
+            if last_frame is not None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 image_path = f"saved_images/pothole_{timestamp}.jpg"
                 os.makedirs("saved_images", exist_ok=True)
-                cv2.imwrite(image_path, frame)
+                cv2.imwrite(image_path, last_frame)
                 saved_image = True
-            cap.release()
+                print(f"Saved image: {image_path}")
+            else:
+                print("No frame available for saving")
         except Exception as e:
             print(f"Error saving image: {e}")
     

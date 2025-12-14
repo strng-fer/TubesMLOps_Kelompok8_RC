@@ -42,5 +42,13 @@
   {
     "timestamp": "2025-12-14T13:14:48.913207",
     "has_pothole": true
+  },
+  {
+    "timestamp": "2025-12-14T13:21:36.813475",
+    "has_pothole": true
+  },
+  {
+    "timestamp": "2025-12-14T13:21:43.314784",
+    "has_pothole": false
   }
 ]
