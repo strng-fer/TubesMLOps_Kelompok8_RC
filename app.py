@@ -1,238 +1,163 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi import FastAPI, Request, Form, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 import cv2
-import numpy as np
-from ultralytics import YOLO
-from PIL import Image
-import io
-import logging
-import time
-from collections import defaultdict
-import subprocess
-import threading
+import json
 import os
 from datetime import datetime
+from ultralytics import YOLO
+import numpy as np
 
-# Set up logging for monitoring
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app = FastAPI()
 
-app = FastAPI(title="Pothole Detection API", description="MLOps Pothole Detection using YOLO")
-
-# Mount static files and templates
-# app.mount("/static", StaticFiles(directory="static"), name="static")  # Commented out since no static files needed
+# Templates
 templates = Jinja2Templates(directory="templates")
 
-# Create directories for saved images
-os.makedirs("saved_images", exist_ok=True)
-
-# Load YOLO model with error handling
-try:
-    model = YOLO("models/best.pt")
-    model_loaded = True
-    logger.info("Model loaded successfully")
-except Exception as e:
-    logger.error(f"Failed to load model: {e}")
-    model_loaded = False
-    model = None
-
-# Global settings for UI
-current_model = "best.pt"
+# Global variables for settings
+current_model = "pothole_yolov8n.pt"
 confidence_threshold = 0.5
-last_detection_time = 0
-detection_delay = 5  # seconds
+model = None
 
-# Simple in-memory metrics
-metrics = defaultdict(int)
-response_times = []
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-
-    metrics["total_requests"] += 1
-    response_times.append(process_time)
-
-    if response.status_code >= 400:
-        metrics["errors"] += 1
-
-    logger.info(f"Request: {request.method} {request.url} - Status: {response.status_code} - Time: {process_time:.4f}s")
-
-    return response
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring model status."""
-    if model_loaded:
-        return {"status": "healthy", "model_loaded": True}
-    else:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-@app.get("/metrics")
-async def get_metrics():
-    """Basic metrics endpoint for monitoring."""
-    avg_time = sum(response_times) / len(response_times) if response_times else 0
-    return {
-        "total_requests": metrics["total_requests"],
-        "errors": metrics["errors"],
-        "avg_response_time": avg_time,
-        "model_loaded": model_loaded
-    }
-
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    if not model_loaded:
-        raise HTTPException(status_code=503, detail="Model not available")
-
-    # Validate file type
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
-
+def load_model():
+    global model
     try:
-        # Read image file
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-        image = np.array(image)
-
-        # Perform detection
-        results = model(image)
-
-        # Extract bounding boxes and confidence scores
-        detections = []
-        for result in results:
-            for box in result.boxes:
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                conf = box.conf[0].item()
-                cls = int(box.cls[0].item())
-                detections.append({
-                    "bbox": [x1, y1, x2, y2],
-                    "confidence": conf,
-                    "class": cls
-                })
-
-        # Log prediction for monitoring
-        logger.info(f"Prediction completed: {len(detections)} detections")
-
-        return JSONResponse(content={"detections": detections})
-
+        model_path = f"models/{current_model}"
+        if os.path.exists(model_path):
+            model = YOLO(model_path)
+            print(f"Model {current_model} loaded successfully")
+        else:
+            print(f"Model {model_path} not found")
+            model = None
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        raise HTTPException(status_code=500, detail="Prediction failed")
+        print(f"Error loading model: {e}")
+        model = None
 
-@app.post("/drift_check")
-async def drift_check():
-    """Check model performance drift by evaluating on test set."""
-    if not model_loaded:
-        raise HTTPException(status_code=503, detail="Model not available")
-
-    try:
-        # Run validation on test set
-        results = model.val(data="data.yaml", split="test")
-
-        # Extract metrics
-        metrics_result = {
-            "precision": results.results_dict.get("metrics/precision(B)", 0),
-            "recall": results.results_dict.get("metrics/recall(B)", 0),
-            "map50": results.results_dict.get("metrics/mAP50(B)", 0),
-            "map50_95": results.results_dict.get("metrics/mAP50-95(B)", 0)
-        }
-
-        logger.info(f"Drift check completed: {metrics_result}")
-
-        return JSONResponse(content={"drift_metrics": metrics_result})
-
-    except Exception as e:
-        logger.error(f"Drift check error: {e}")
-        raise HTTPException(status_code=500, detail="Drift check failed")
-
-@app.post("/update_settings")
-async def update_settings(model_version: str = Form(...), confidence: float = Form(...)):
-    """Update model and confidence settings."""
-    global current_model, confidence_threshold, model, model_loaded
-    
-    confidence_threshold = confidence
-    
-    if model_version != current_model:
-        current_model = model_version
-        try:
-            model = YOLO(f"models/{model_version}")
-            model_loaded = True
-            logger.info(f"Model switched to {model_version}")
-        except Exception as e:
-            logger.error(f"Failed to load model {model_version}: {e}")
-            model_loaded = False
-    
-    return {"message": "Settings updated", "model": current_model, "confidence": confidence_threshold}
+# Load initial model
+load_model()
 
 def generate_frames():
-    """Generate video frames with real-time detection."""
-    global last_detection_time
-    
-    cap = cv2.VideoCapture(0)  # Use webcam
-    
-    if not cap.isOpened():
-        # If webcam not available, return error frame
-        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(error_frame, "Webcam not available", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        ret, buffer = cv2.imencode('.jpg', error_frame)
-        frame_bytes = buffer.tobytes()
-        while True:
+    try:
+        cap = cv2.VideoCapture(0)  # Use webcam
+        if not cap.isOpened():
+            print("Cannot open webcam")
+            # Return a placeholder frame
+            placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(placeholder, "Webcam not available", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            ret, buffer = cv2.imencode('.jpg', placeholder)
+            frame = buffer.tobytes()
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            time.sleep(1)
-    
-    while True:
-        success, frame = cap.read()
-        if not success:
-            break
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            return
         
-        # Perform detection if model is loaded
-        if model_loaded and model:
-            results = model(frame, conf=confidence_threshold)
+        while True:
+            success, frame = cap.read()
+            if not success:
+                break
             
-            # Draw detections
-            annotated_frame = results[0].plot()
+            # Perform inference if model is loaded
+            if model:
+                try:
+                    results = model(frame, conf=confidence_threshold)
+                    
+                    # Draw detections
+                    for result in results:
+                        for box in result.boxes:
+                            x1, y1, x2, y2 = box.xyxy[0].tolist()
+                            conf = box.conf[0].item()
+                            
+                            # Draw rectangle
+                            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                            
+                            # Draw confidence
+                            cv2.putText(frame, f"{conf:.2f}", (int(x1), int(y1)-10), 
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                except Exception as e:
+                    print(f"Inference error: {e}")
+                    cv2.putText(frame, "Inference error", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             
-            # Check for detections and save image if needed
-            detections = len(results[0].boxes)
-            if detections > 0:
-                current_time = time.time()
-                if current_time - last_detection_time > detection_delay:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"saved_images/detection_{timestamp}.jpg"
-                    cv2.imwrite(filename, frame)
-                    last_detection_time = current_time
-                    logger.info(f"Saved detection image: {filename}")
-        else:
-            annotated_frame = frame
-        
-        # Encode frame
-        ret, buffer = cv2.imencode('.jpg', annotated_frame)
-        frame_bytes = buffer.tobytes()
-        
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-@app.get("/video_feed")
-async def video_feed():
-    """Video streaming endpoint."""
-    return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+            # Encode frame
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+    except Exception as e:
+        print(f"Video generation error: {e}")
+    finally:
+        try:
+            cap.release()
+        except:
+            pass
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Main UI page for pothole detection."""
     return templates.TemplateResponse("index.html", {
         "request": request,
         "current_model": current_model,
         "confidence_threshold": confidence_threshold
     })
 
-if __name__ == "__main__":
-    import uvicorn
-    import os
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+@app.get("/video_feed")
+async def video_feed():
+    return StreamingResponse(generate_frames(), 
+                           media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.post("/update_settings")
+async def update_settings(
+    model_version: str = Form(...),
+    confidence: float = Form(...)
+):
+    global current_model, confidence_threshold
+    current_model = model_version
+    confidence_threshold = confidence
+    
+    # Reload model
+    load_model()
+    
+    return {
+        "model": current_model,
+        "confidence": confidence_threshold
+    }
+
+@app.post("/feedback")
+async def submit_feedback(has_pothole: bool = Form(...)):
+    # Load existing feedback log
+    feedback_file = "feedback_log.json"
+    try:
+        if os.path.exists(feedback_file) and os.path.getsize(feedback_file) > 0:
+            with open(feedback_file, 'r') as f:
+                feedback_log = json.load(f)
+        else:
+            feedback_log = []
+    except json.JSONDecodeError:
+        print("Invalid JSON in feedback_log.json, starting fresh")
+        feedback_log = []
+    
+    # Add new feedback
+    feedback_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "has_pothole": has_pothole
+    }
+    feedback_log.append(feedback_entry)
+    
+    # Save feedback log
+    with open(feedback_file, 'w') as f:
+        json.dump(feedback_log, f, indent=2)
+    
+    # Save current frame as image if pothole detected
+    saved_image = False
+    if has_pothole:
+        try:
+            cap = cv2.VideoCapture(0)
+            ret, frame = cap.read()
+            if ret:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                image_path = f"saved_images/pothole_{timestamp}.jpg"
+                os.makedirs("saved_images", exist_ok=True)
+                cv2.imwrite(image_path, frame)
+                saved_image = True
+            cap.release()
+        except Exception as e:
+            print(f"Error saving image: {e}")
+    
+    return {"saved_image": saved_image}

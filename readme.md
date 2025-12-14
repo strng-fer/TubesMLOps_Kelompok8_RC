@@ -260,27 +260,37 @@ railway up
 - **`.env.example`**: Template environment variables
 - **`.gitignore`**: Git ignore rules
 
-### 💰 Upgrade Plan Railway:
+### 💰 **SOLUSI TERBAIK: Upgrade ke Hobby Plan**
 
-Jika image masih >4GB, upgrade ke **Hobby Plan** ($5/bulan):
-- Image size limit: **8GB**
-- RAM: 8GB
-- Disk: 5GB
+Karena aplikasi ML dengan dependencies besar, **upgrade ke Railway Hobby Plan** adalah solusi paling praktis:
 
-**Cara Upgrade:**
-1. Pergi ke Railway dashboard
-2. Project Settings → Billing
-3. Upgrade ke Hobby Plan
+#### **Hobby Plan Benefits:**
+- ✅ **Image size limit: 8GB** (vs 4GB Starter)
+- ✅ **RAM: 8GB** (vs 512MB Starter)
+- ✅ **Disk: 5GB** (vs 1GB Starter)
+- ✅ **Harga: $5/bulan** (sangat affordable untuk production)
 
-### 🔄 Redeploy Setelah Optimasi:
+#### **Cara Upgrade:**
+1. Pergi ke [Railway Dashboard](https://railway.app)
+2. Pilih project Anda
+3. **Settings** → **Billing**
+4. **Upgrade to Hobby Plan**
+5. Build ulang otomatis
+
+#### **Mengapa Upgrade?**
+- Aplikasi ML seperti YOLO + OpenCV butuh resources yang lebih
+- 7.5GB image adalah normal untuk ML apps
+- Hobby plan dirancang untuk production apps
+
+### 🔄 **Setelah Upgrade:**
 
 ```bash
 git add .
-git commit -m "Optimize Docker for smaller image size"
+git commit -m "Optimized Dockerfile for Railway"
 git push origin main
 ```
 
-Railway akan auto-rebuild dengan Dockerfile yang baru.
+Railway akan auto-rebuild dengan plan baru dan limit 8GB.
 
 ---
 

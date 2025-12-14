@@ -10,23 +10,27 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libgomp1 \
     libgthread-2.0-0 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install with optimizations
+# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (exclude models/)
 COPY app.py .
 COPY data.yaml .
-COPY models/ ./models/
 COPY templates/ ./templates/
 COPY training/train_yolo.py ./training/
 COPY inference/predict.py ./inference/
 
 # Create necessary directories
-RUN mkdir -p saved_images
+RUN mkdir -p models saved_images
+
+# Copy model from repo (pastikan best.pt ada di repo)
+COPY models/best.pt ./models/best.pt
+
 
 EXPOSE 8000
 

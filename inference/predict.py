@@ -1,9 +1,9 @@
 from ultralytics import YOLO
 import cv2
 
-def predict_image(image_path):
+def predict_image(image_path, model_path="../models/pothole_yolov8n.pt"):
     # Load model
-    model = YOLO("../models/best.pt")
+    model = YOLO(model_path)
 
     # Load image
     image = cv2.imread(image_path)

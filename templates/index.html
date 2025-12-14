@@ -75,8 +75,9 @@
             <form id="settingsForm">
                 <label for="model">Model Version:</label>
                 <select id="model" name="model_version">
-                    <option value="best.pt" {% if current_model == 'best.pt' %}selected{% endif %}>Best Model (best.pt)</option>
-                    <!-- Add more model options here if available -->
+                    <option value="pothole_yolov8n.pt" {% if current_model == 'pothole_yolov8n.pt' %}selected{% endif %}>YOLOv8 Nano (pothole_yolov8n.pt)</option>
+                    <option value="pothole_yolov8s.pt" {% if current_model == 'pothole_yolov8s.pt' %}selected{% endif %}>YOLOv8 Small (pothole_yolov8s.pt)</option>
+                    <option value="pothole_yolov8m.pt" {% if current_model == 'pothole_yolov8m.pt' %}selected{% endif %}>YOLOv8 Medium (pothole_yolov8m.pt)</option>
                 </select>
                 
                 <label for="confidence">Confidence Threshold:</label>
@@ -90,6 +91,12 @@
         <div class="video-container">
             <h3>Live Video Feed</h3>
             <img id="videoFeed" src="/video_feed" alt="Live video feed">
+            
+            <div class="feedback-buttons" style="margin-top: 20px;">
+                <h4>Provide Feedback:</h4>
+                <button id="feedbackYes" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Ada Pothole</button>
+                <button id="feedbackNo" style="padding: 10px 20px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Tidak Ada Pothole</button>
+            </div>
         </div>
         
         <div class="status" id="status">
@@ -122,6 +129,35 @@
                 console.error('Error:', error);
             }
         });
+
+        // Feedback buttons
+        document.getElementById('feedbackYes').addEventListener('click', async function() {
+            await submitFeedback(true);
+        });
+
+        document.getElementById('feedbackNo').addEventListener('click', async function() {
+            await submitFeedback(false);
+        });
+
+        async function submitFeedback(hasPothole) {
+            const formData = new FormData();
+            formData.append('has_pothole', hasPothole);
+            
+            try {
+                const response = await fetch('/feedback', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                document.getElementById('status').textContent = 
+                    `Status: Feedback submitted - Image saved: ${result.saved_image}`;
+                
+            } catch (error) {
+                document.getElementById('status').textContent = 'Status: Error submitting feedback';
+                console.error('Error:', error);
+            }
+        }
     </script>
 </body>
 </html>

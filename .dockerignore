@@ -26,3 +26,7 @@ Thumbs.db
 *.tmp
 *.swp
 *~
+
+# Exclude models/ kecuali best.pt yang akan di-copy explicit
+models/
+!models/best.pt
