@@ -29,7 +29,7 @@ results = model.train(
     batch=16,
     device=0,
     project="runs/pothole",
-    name="exp1"
+    name="exp1.0"
 )
 
 # Predict on test set

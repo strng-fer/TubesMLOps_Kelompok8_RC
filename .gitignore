@@ -131,7 +131,6 @@ dmypy.json
 # ML/DS specific
 models/*.pt
 !models/best.pt
-saved_images/
 runs/
 wandb/
 
