@@ -2,23 +2,20 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (minimal for OpenCV and YOLO)
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
     libgomp1 \
-    libgthread-2.0-0 \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements and install (exclude heavy optional deps)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt --only-binary=all
 
-# Copy application code (exclude models/)
+# Copy application code
 COPY app.py .
 COPY data.yaml .
 COPY templates/ ./templates/
@@ -26,8 +23,6 @@ COPY training/train_yolo.py ./training/
 
 # Create necessary directories
 RUN mkdir -p models saved_images
-
-# Model will be downloaded at runtime from W&B if not present
 
 EXPOSE 8000
 
