@@ -1,3 +1,4 @@
+import uuid
 from fastapi import FastAPI, Request, Form, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -7,6 +8,13 @@ import os
 from datetime import datetime
 from ultralytics import YOLO
 import numpy as np
+
+def convert_to_yolo_format(x1, y1, x2, y2, img_width, img_height):
+    x_center = (x1 + x2) / 2 / img_width
+    y_center = (y1 + y2) / 2 / img_height
+    width = (x2 - x1) / img_width
+    height = (y2 - y1) / img_height
+    return x_center, y_center, width, height
 
 app = FastAPI()
 
@@ -138,32 +146,77 @@ async def submit_feedback(has_pothole: bool = Form(...)):
         print("Invalid JSON in feedback_log.json, starting fresh")
         feedback_log = []
     
-    # Add new feedback
+    # Generate unique ID
+    feedback_id = str(uuid.uuid4())
+    timestamp = datetime.now().isoformat()
+    
+    # Initialize variables
+    image_path = None
+    labels_path = None
+    bounding_boxes = []
+    
+    if has_pothole:
+        try:
+            global last_frame, model
+            if last_frame is not None and model is not None:
+                # Perform inference on the last frame
+                results = model(last_frame, conf=confidence_threshold)
+                
+                # Get image dimensions
+                img_height, img_width = last_frame.shape[:2]
+                
+                # Process detections
+                for result in results:
+                    for box in result.boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        conf = box.conf[0].item()
+                        
+                        # Convert to YOLO format
+                        x_center, y_center, width, height = convert_to_yolo_format(
+                            x1, y1, x2, y2, img_width, img_height
+                        )
+                        
+                        # Add to bounding boxes list (class 0 for pothole)
+                        bounding_boxes.append([0, x_center, y_center, width, height])
+                
+                # Save image
+                timestamp_short = datetime.now().strftime("%Y%m%d_%H%M%S")
+                os.makedirs("saved_images/images", exist_ok=True)
+                image_path = f"saved_images/images/pothole_{timestamp_short}.jpg"
+                cv2.imwrite(image_path, last_frame)
+                
+                # Save labels to TXT file
+                os.makedirs("saved_images/labels", exist_ok=True)
+                labels_path = f"saved_images/labels/pothole_{timestamp_short}.txt"
+                with open(labels_path, 'w') as f:
+                    for bbox in bounding_boxes:
+                        f.write(f"{bbox[0]} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f} {bbox[4]:.6f}\n")
+                
+                print(f"Saved image: {image_path}")
+                print(f"Saved labels: {labels_path}")
+            else:
+                print("No frame or model available for saving")
+        except Exception as e:
+            print(f"Error processing feedback: {e}")
+    
+    # Create feedback entry
     feedback_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "has_pothole": has_pothole
+        "id": feedback_id,
+        "timestamp": timestamp,
+        "image_path": image_path,
+        "labels_path": labels_path,
+        "has_pothole": has_pothole,
+        "bounding_boxes": bounding_boxes
     }
+    
     feedback_log.append(feedback_entry)
     
     # Save feedback log
     with open(feedback_file, 'w') as f:
         json.dump(feedback_log, f, indent=2)
     
-    # Save current frame as image if pothole detected
-    saved_image = False
-    if has_pothole:
-        try:
-            global last_frame
-            if last_frame is not None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                image_path = f"saved_images/pothole_{timestamp}.jpg"
-                os.makedirs("saved_images", exist_ok=True)
-                cv2.imwrite(image_path, last_frame)
-                saved_image = True
-                print(f"Saved image: {image_path}")
-            else:
-                print("No frame available for saving")
-        except Exception as e:
-            print(f"Error saving image: {e}")
-    
-    return {"saved_image": saved_image}
+    return {
+        "saved_image": image_path is not None,
+        "saved_labels": labels_path is not None,
+        "id": feedback_id
+    }
