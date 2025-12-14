@@ -23,7 +23,6 @@ COPY app.py .
 COPY data.yaml .
 COPY templates/ ./templates/
 COPY training/train_yolo.py ./training/
-COPY inference/predict.py ./inference/
 
 # Create necessary directories
 RUN mkdir -p models saved_images

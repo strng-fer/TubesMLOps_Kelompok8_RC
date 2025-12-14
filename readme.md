@@ -61,9 +61,6 @@ project-root/
 ├── training/
 │   └── train_yolo.py
 │
-├── inference/
-│   └── predict.py
-│
 ├── templates/
 │   └── index.html          # UI template
 │

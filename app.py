@@ -115,6 +115,22 @@ def add_new_data_to_dataset():
     
     print(f"Added {len(copied_files)} new samples to training dataset and removed from saved_images")
 
+def evaluate_model(model_path):
+    """Evaluate model on validation set and return metrics"""
+    try:
+        model = YOLO(model_path)
+        results = model.val(data="data.yaml")
+        if hasattr(results, 'results_dict'):
+            metrics = results.results_dict
+            mAP50 = metrics.get("metrics/mAP50(B)", 0)
+            return mAP50
+        else:
+            print("No metrics available from validation")
+            return 0
+    except Exception as e:
+        print(f"Error evaluating model {model_path}: {e}")
+        return 0
+
 def retrain_model():
     """Run retraining in background"""
     try:
@@ -135,6 +151,10 @@ def retrain_model():
             shutil.copy2(current_model_path, backup_path)
             print(f"Backed up model to {backup_path}")
         
+        # Evaluate current model before retraining
+        old_metrics = evaluate_model(current_model_path)
+        print(f"Current model mAP50: {old_metrics}")
+        
         # Add new data first
         add_new_data_to_dataset()
         
@@ -145,13 +165,29 @@ def retrain_model():
         if result.stderr:
             print("STDERR:", result.stderr)
         
-        # Update version
-        with open(version_file, 'w') as f:
-            f.write(str(new_version))
-        print(f"Model version updated to v{new_version}")
-        
-        # Reload model after retraining
-        load_model()
+        # Check if new model is better
+        new_model_path = "models/best.pt"
+        if os.path.exists(new_model_path):
+            new_metrics = evaluate_model(new_model_path)
+            print(f"New model mAP50: {new_metrics}")
+            
+            if new_metrics > old_metrics:
+                print("New model is better, keeping it as best.pt")
+                # Update version
+                with open(version_file, 'w') as f:
+                    f.write(str(new_version))
+                print(f"Model version updated to v{new_version}")
+                
+                # Reload model after retraining
+                load_model()
+            else:
+                print("New model is not better, reverting to old model")
+                # Restore old model
+                if os.path.exists(backup_path):
+                    shutil.copy2(backup_path, new_model_path)
+                    print("Restored old model")
+        else:
+            print("New model not found")
         
     except Exception as e:
         print(f"Retraining failed: {e}")
