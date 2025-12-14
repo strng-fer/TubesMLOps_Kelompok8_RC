@@ -27,9 +27,7 @@ COPY training/train_yolo.py ./training/
 # Create necessary directories
 RUN mkdir -p models saved_images
 
-# Copy model from repo (pastikan best.pt ada di repo)
-COPY models/best.pt ./models/best.pt
-
+# Model will be downloaded at runtime from W&B if not present
 
 EXPOSE 8000
 
