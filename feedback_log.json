@@ -1,0 +1,34 @@
+[
+  {
+    "id": "2af29480-3e2d-444a-8a95-708c90cb1ed9",
+    "timestamp": "2025-12-14T14:16:37.062071",
+    "image_path": "saved_images/images/pothole_20251214_141638.jpg",
+    "labels_path": "saved_images/labels/pothole_20251214_141638.txt",
+    "has_pothole": true,
+    "bounding_boxes": []
+  },
+  {
+    "id": "ebd364ba-d53b-4102-a035-636c0d89c4ce",
+    "timestamp": "2025-12-14T14:19:13.252393",
+    "image_path": "saved_images/images/pothole_20251214_141913.jpg",
+    "labels_path": "saved_images/labels/pothole_20251214_141913.txt",
+    "has_pothole": true,
+    "bounding_boxes": [
+      [
+        0,
+        0.8460416793823242,
+        0.8998954137166341,
+        0.3063039779663086,
+        0.20020917256673176
+      ]
+    ]
+  },
+  {
+    "id": "9d2531ad-630e-4f33-849a-ef0df3c9a140",
+    "timestamp": "2025-12-14T14:19:16.036052",
+    "image_path": null,
+    "labels_path": null,
+    "has_pothole": false,
+    "bounding_boxes": []
+  }
+]

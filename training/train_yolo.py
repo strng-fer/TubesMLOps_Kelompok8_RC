@@ -2,6 +2,10 @@ from ultralytics import YOLO
 import wandb
 import shutil
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup W&B authentication
 wandb_api_key = os.getenv('WANDB_API_KEY')

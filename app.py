@@ -220,3 +220,49 @@ async def submit_feedback(has_pothole: bool = Form(...)):
         "saved_labels": labels_path is not None,
         "id": feedback_id
     }
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/metrics")
+async def get_metrics():
+    feedback_file = "feedback_log.json"
+    try:
+        if os.path.exists(feedback_file) and os.path.getsize(feedback_file) > 0:
+            with open(feedback_file, 'r') as f:
+                feedback_log = json.load(f)
+        else:
+            feedback_log = []
+    except json.JSONDecodeError:
+        feedback_log = []
+    
+    total_feedback = len(feedback_log)
+    pothole_detected = sum(1 for f in feedback_log if f.get("has_pothole", False))
+    accuracy_estimate = pothole_detected / total_feedback if total_feedback > 0 else 0
+    
+    # Dummy latency and error rate (in real implementation, track actual values)
+    avg_latency = 0.05  # seconds
+    error_rate = 0.01   # 1%
+    
+    return {
+        "total_predictions": total_feedback,
+        "pothole_detected": pothole_detected,
+        "accuracy_estimate": round(accuracy_estimate, 2),
+        "avg_latency_seconds": avg_latency,
+        "error_rate": error_rate
+    }
+
+@app.get("/logs")
+async def get_logs():
+    feedback_file = "feedback_log.json"
+    try:
+        if os.path.exists(feedback_file) and os.path.getsize(feedback_file) > 0:
+            with open(feedback_file, 'r') as f:
+                feedback_log = json.load(f)
+        else:
+            feedback_log = []
+    except json.JSONDecodeError:
+        feedback_log = []
+    
+    return {"logs": feedback_log}
