@@ -75,9 +75,9 @@
             <form id="settingsForm">
                 <label for="model">Model Version:</label>
                 <select id="model" name="model_version">
-                    <option value="pothole_yolov8n.pt" {% if current_model == 'pothole_yolov8n.pt' %}selected{% endif %}>YOLOv8 Nano (pothole_yolov8n.pt)</option>
-                    <option value="pothole_yolov8s.pt" {% if current_model == 'pothole_yolov8s.pt' %}selected{% endif %}>YOLOv8 Small (pothole_yolov8s.pt)</option>
-                    <option value="pothole_yolov8m.pt" {% if current_model == 'pothole_yolov8m.pt' %}selected{% endif %}>YOLOv8 Medium (pothole_yolov8m.pt)</option>
+                    {% for model in available_models %}
+                    <option value="{{ model }}" {% if current_model == model %}selected{% endif %}>{{ model }}</option>
+                    {% endfor %}
                 </select>
                 
                 <label for="confidence">Confidence Threshold:</label>

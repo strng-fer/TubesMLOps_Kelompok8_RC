@@ -1,13 +1,17 @@
 import uuid
-from fastapi import FastAPI, Request, Form, Response
+from fastapi import FastAPI, Request, Form, Response, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 import cv2
 import json
 import os
+import shutil
+import subprocess
 from datetime import datetime
 from ultralytics import YOLO
 import numpy as np
+from dotenv import load_dotenv
+import wandb
 
 def convert_to_yolo_format(x1, y1, x2, y2, img_width, img_height):
     x_center = (x1 + x2) / 2 / img_width
@@ -21,11 +25,15 @@ app = FastAPI()
 # Templates
 templates = Jinja2Templates(directory="templates")
 
+# Load environment variables
+load_dotenv()
+
 # Global variables for settings
-current_model = "pothole_yolov8n.pt"
+current_model = "best.pt"
 confidence_threshold = 0.5
 model = None
 last_frame = None  # Store the latest frame for feedback
+last_processed_feedback_id = None  # Track last processed feedback for retraining
 
 def load_model():
     global model
@@ -35,14 +43,133 @@ def load_model():
             model = YOLO(model_path)
             print(f"Model {current_model} loaded successfully")
         else:
-            print(f"Model {model_path} not found")
-            model = None
+            print(f"Model {model_path} not found, attempting to download from W&B Registry")
+            # Try to download from W&B Registry
+            wandb_api_key = os.getenv('WANDB_API_KEY')
+            if wandb_api_key:
+                wandb.login(key=wandb_api_key)
+                try:
+                    # Download the latest model from registry
+                    artifact = wandb.use_artifact("pothole-detection/pothole-yolov8n:latest")
+                    artifact_dir = artifact.download(root="models/")
+                    # Assume the model file is named best.pt
+                    downloaded_model_path = os.path.join(artifact_dir, "best.pt")
+                    if os.path.exists(downloaded_model_path):
+                        shutil.copy2(downloaded_model_path, model_path)
+                        model = YOLO(model_path)
+                        print(f"Model downloaded and loaded from W&B Registry")
+                    else:
+                        print("Downloaded artifact does not contain expected model file")
+                        model = None
+                except Exception as e:
+                    print(f"Failed to download model from W&B: {e}")
+                    model = None
+            else:
+                print("WANDB_API_KEY not set, cannot download model")
+                model = None
     except Exception as e:
         print(f"Error loading model: {e}")
         model = None
 
+def add_new_data_to_dataset():
+    """Add saved images and labels to training dataset and remove from saved_images"""
+    saved_images_dir = "saved_images/images"
+    saved_labels_dir = "saved_images/labels"
+    train_images_dir = "dataset/train/images"
+    train_labels_dir = "dataset/train/labels"
+    
+    if not os.path.exists(saved_images_dir) or not os.path.exists(saved_labels_dir):
+        print("No saved data to add")
+        return
+    
+    # Ensure train directories exist
+    os.makedirs(train_images_dir, exist_ok=True)
+    os.makedirs(train_labels_dir, exist_ok=True)
+    
+    # Copy images and labels
+    copied_files = []
+    for filename in os.listdir(saved_images_dir):
+        if filename.endswith('.jpg'):
+            src = os.path.join(saved_images_dir, filename)
+            dst = os.path.join(train_images_dir, filename)
+            shutil.copy2(src, dst)
+            copied_files.append(filename)
+            
+            # Copy corresponding label
+            label_filename = filename.replace('.jpg', '.txt')
+            label_src = os.path.join(saved_labels_dir, label_filename)
+            if os.path.exists(label_src):
+                label_dst = os.path.join(train_labels_dir, label_filename)
+                shutil.copy2(label_src, label_dst)
+    
+    # Remove copied files from saved_images
+    for filename in copied_files:
+        img_path = os.path.join(saved_images_dir, filename)
+        label_filename = filename.replace('.jpg', '.txt')
+        label_path = os.path.join(saved_labels_dir, label_filename)
+        
+        if os.path.exists(img_path):
+            os.remove(img_path)
+        if os.path.exists(label_path):
+            os.remove(label_path)
+    
+    print(f"Added {len(copied_files)} new samples to training dataset and removed from saved_images")
+
+def retrain_model():
+    """Run retraining in background"""
+    try:
+        # Get current version
+        version_file = "models/version.txt"
+        try:
+            with open(version_file, 'r') as f:
+                current_version = int(f.read().strip())
+        except FileNotFoundError:
+            current_version = 1
+        
+        new_version = current_version + 1
+        
+        # Backup current model with version
+        current_model_path = f"models/{current_model}"
+        if os.path.exists(current_model_path):
+            backup_path = f"models/v{current_version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pt"
+            shutil.copy2(current_model_path, backup_path)
+            print(f"Backed up model to {backup_path}")
+        
+        # Add new data first
+        add_new_data_to_dataset()
+        
+        # Run training script
+        result = subprocess.run(["python", "training/train_yolo.py"], capture_output=True, text=True)
+        print("Retraining completed")
+        print("STDOUT:", result.stdout)
+        if result.stderr:
+            print("STDERR:", result.stderr)
+        
+        # Update version
+        with open(version_file, 'w') as f:
+            f.write(str(new_version))
+        print(f"Model version updated to v{new_version}")
+        
+        # Reload model after retraining
+        load_model()
+        
+    except Exception as e:
+        print(f"Retraining failed: {e}")
+
 # Load initial model
 load_model()
+
+# Initialize last_processed_feedback_id from existing feedback_log
+feedback_file = "feedback_log.json"
+if os.path.exists(feedback_file) and os.path.getsize(feedback_file) > 0:
+    try:
+        with open(feedback_file, 'r') as f:
+            existing_feedbacks = json.load(f)
+        if existing_feedbacks:
+            last_processed_feedback_id = existing_feedbacks[-1]['id']
+            print(f"Initialized last_processed_feedback_id to {last_processed_feedback_id}")
+    except json.JSONDecodeError:
+        pass
 
 def generate_frames():
     try:
@@ -104,10 +231,22 @@ def generate_frames():
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    # Get available models
+    models_dir = "models"
+    available_models = []
+    if os.path.exists(models_dir):
+        for file in os.listdir(models_dir):
+            if file.endswith('.pt'):
+                available_models.append(file)
+    
+    # Sort models, put best.pt first
+    available_models.sort(key=lambda x: (x != 'best.pt', x))
+    
     return templates.TemplateResponse("index.html", {
         "request": request,
         "current_model": current_model,
-        "confidence_threshold": confidence_threshold
+        "confidence_threshold": confidence_threshold,
+        "available_models": available_models
     })
 
 @app.get("/video_feed")
@@ -133,7 +272,7 @@ async def update_settings(
     }
 
 @app.post("/feedback")
-async def submit_feedback(has_pothole: bool = Form(...)):
+async def submit_feedback(has_pothole: bool = Form(...), background_tasks: BackgroundTasks = None):
     # Load existing feedback log
     feedback_file = "feedback_log.json"
     try:
@@ -215,10 +354,28 @@ async def submit_feedback(has_pothole: bool = Form(...)):
     with open(feedback_file, 'w') as f:
         json.dump(feedback_log, f, indent=2)
     
+    # Check if we have enough data for retraining (500+ feedbacks since last retrain)
+    retraining_triggered = False
+    global last_processed_feedback_id
+    if last_processed_feedback_id is None:
+        # First time, count all feedbacks
+        new_feedbacks = feedback_log
+    else:
+        # Count feedbacks after last processed ID
+        new_feedbacks = [f for f in feedback_log if f['id'] > last_processed_feedback_id]
+    
+    if len(new_feedbacks) >= 10 and background_tasks:
+        print(f"Triggering retraining: {len(new_feedbacks)} new feedbacks collected since last retrain")
+        background_tasks.add_task(retrain_model)
+        retraining_triggered = True
+        # Update last processed ID to current last feedback
+        last_processed_feedback_id = feedback_log[-1]['id']
+    
     return {
         "saved_image": image_path is not None,
         "saved_labels": labels_path is not None,
-        "id": feedback_id
+        "id": feedback_id,
+        "retraining_triggered": retraining_triggered
     }
 
 @app.get("/health")
