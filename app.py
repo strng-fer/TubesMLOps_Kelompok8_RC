@@ -11,12 +11,7 @@ from datetime import datetime
 from ultralytics import YOLO
 import numpy as np
 from dotenv import load_dotenv
-
-try:
-    import wandb
-    WANDB_AVAILABLE = True
-except ImportError:
-    WANDB_AVAILABLE = False
+import wandb
 
 def convert_to_yolo_format(x1, y1, x2, y2, img_width, img_height):
     x_center = (x1 + x2) / 2 / img_width
@@ -48,33 +43,29 @@ def load_model():
             model = YOLO(model_path)
             print(f"Model {current_model} loaded successfully")
         else:
-            print(f"Model {model_path} not found")
-            if WANDB_AVAILABLE:
-                # Try to download from W&B Registry
-                wandb_api_key = os.getenv('WANDB_API_KEY')
-                if wandb_api_key:
-                    wandb.login(key=wandb_api_key)
-                    try:
-                        # Download the latest model from registry
-                        artifact = wandb.use_artifact("pothole-detection/pothole-yolov8n:latest")
-                        artifact_dir = artifact.download(root="models/")
-                        # Assume the model file is named best.pt
-                        downloaded_model_path = os.path.join(artifact_dir, "best.pt")
-                        if os.path.exists(downloaded_model_path):
-                            shutil.copy2(downloaded_model_path, model_path)
-                            model = YOLO(model_path)
-                            print(f"Model downloaded and loaded from W&B Registry")
-                        else:
-                            print("Downloaded artifact does not contain expected model file")
-                            model = None
-                    except Exception as e:
-                        print(f"Failed to download model from W&B: {e}")
+            print(f"Model {model_path} not found, attempting to download from W&B Registry")
+            # Try to download from W&B Registry
+            wandb_api_key = os.getenv('WANDB_API_KEY')
+            if wandb_api_key:
+                wandb.login(key=wandb_api_key)
+                try:
+                    # Download the latest model from registry
+                    artifact = wandb.use_artifact("pothole-detection/pothole-yolov8n:latest")
+                    artifact_dir = artifact.download(root="models/")
+                    # Assume the model file is named best.pt
+                    downloaded_model_path = os.path.join(artifact_dir, "best.pt")
+                    if os.path.exists(downloaded_model_path):
+                        shutil.copy2(downloaded_model_path, model_path)
+                        model = YOLO(model_path)
+                        print(f"Model downloaded and loaded from W&B Registry")
+                    else:
+                        print("Downloaded artifact does not contain expected model file")
                         model = None
-                else:
-                    print("WANDB_API_KEY not set, cannot download model")
+                except Exception as e:
+                    print(f"Failed to download model from W&B: {e}")
                     model = None
             else:
-                print("W&B not available, cannot download model")
+                print("WANDB_API_KEY not set, cannot download model")
                 model = None
     except Exception as e:
         print(f"Error loading model: {e}")

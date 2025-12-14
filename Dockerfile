@@ -1,21 +1,38 @@
+# Multi-stage build for smaller image size
+FROM python:3.9-slim as builder
+
+WORKDIR /app
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install in a virtual environment
+COPY requirements.txt .
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Final stage
 FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies (minimal for OpenCV and YOLO)
-RUN apt-get update && apt-get install -y \
+# Install only runtime system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy requirements and install (exclude heavy optional deps)
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt --only-binary=all
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy application code
+# Copy application code (exclude models/)
 COPY app.py .
 COPY data.yaml .
 COPY templates/ ./templates/
@@ -23,6 +40,8 @@ COPY training/train_yolo.py ./training/
 
 # Create necessary directories
 RUN mkdir -p models saved_images
+
+# Model will be downloaded at runtime from W&B if not present
 
 EXPOSE 8000
 
